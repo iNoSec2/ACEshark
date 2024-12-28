@@ -17,7 +17,7 @@ ACEshark is a utility designed for rapid extraction and analysis of Windows serv
 Running ACEshark starts an HTTP server to act as a listener for service configurations and Access Control Entries. It generates a small extractor script based on the specified options, which the user runs on the target machine. ACEshark then retrieves and processes the data, providing a detailed analysis.
 
 ## ❗Important
-- Even if a service is characterized as a great candidate for privilege escalation according to its ACEs and configuration, there are other Windows security features that may prevent you from actually abusing it.
-- This is probably not going to be particularly stealthy.
+1. Even if a service is characterized as a great candidate for privilege escalation according to its ACEs and configuration, there are other Windows security features that may prevent you from actually abusing it.
+2. This is probably not going to be particularly stealthy.
 
 ## Overview
