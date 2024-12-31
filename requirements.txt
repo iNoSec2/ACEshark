@@ -1,2 +1,1 @@
-netifaces
 sddl_parser
