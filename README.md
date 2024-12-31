@@ -7,7 +7,7 @@
 <img src="https://img.shields.io/badge/Experimental-ff0000">
 
 ## What is it?
-ACEshark is a utility designed for rapid extraction and analysis of Windows service configurations and Access Control Entries, eliminating the need for tools like accesschk.exe or other non-native binaries.
+ACEshark is a utility designed for rapid extraction and analysis of Windows service configurations and Access Control Entries, eliminating the need for tools like `accesschk.exe` or other non-native binaries.
 
 ## Why?
 - Efficiently identify and analyze service permissions to uncover potential privilege escalation vectors (changing the `binpath` of a service and restarting it).  
