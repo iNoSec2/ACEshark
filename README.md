@@ -2,7 +2,7 @@
 [![Python](https://img.shields.io/badge/Python-%E2%89%A5%203.12-yellow.svg)](https://www.python.org/) 
 <img src="https://img.shields.io/badge/PowerShell-%E2%89%A5%20v3.0-blue">
 <img src="https://img.shields.io/badge/Developed%20on-kali%20linux-blueviolet">
-[![License](https://img.shields.io/badge/License-BSD-red.svg)](https://github.com/t3l3machus/ACEshark/blob/main/LICENSE.md)
+[![License](https://img.shields.io/badge/License-BSD-red.svg)](https://github.com/t3l3machus/ACEshark/blob/main/LICENSE)
 <img src="https://img.shields.io/badge/Maintained%3F-Yes-96c40f">
 <img src="https://img.shields.io/badge/Experimental-ff0000">
 
