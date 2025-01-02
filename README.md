@@ -21,5 +21,6 @@ ACEshark generates a log file for each extracted services configuration, allowin
 ## ❗Important
 1. Even if a service is characterized as a great candidate for privilege escalation according to its ACEs and configuration, there are other Windows security features that may prevent you from actually abusing it.
 2. This is probably not going to be particularly stealthy.
+3. Using this tool against hosts that you do not have explicit permission to test is illegal. You are responsible for any trouble you may cause by using this tool.
 
 ## Overview
