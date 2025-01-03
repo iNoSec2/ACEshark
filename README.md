@@ -39,16 +39,14 @@ git clone https://github.com/t3l3machus/ACEshark
 cd ACEshark  
 pip3 install -r requirements.txt  
 ```
-That’s it! You’re all set.
+You’re all set.
 
 
 ## Usage
 ```
-ACEshark.py [-h] [-s SERVER_ADDRESS] [-p PORT] [-c CERTFILE] [-k KEYFILE] [-f FILE_INPUT] [-i] [-g] [-a] [-x CUSTOM_MODE] [-lg] [-gs] [-e] [-z CONFIG_FILENAME] [-d DELIMITER] [-q]
-                   [-v]
+ACEshark.py [-h] [-s SERVER_ADDRESS] [-p PORT] [-c CERTFILE] [-k KEYFILE] [-f FILE_INPUT] [-i] [-g] [-a] [-x CUSTOM_MODE] [-lg] [-gs] [-e] [-z CONFIG_FILENAME] [-d DELIMITER] [-q] [-v]
 
-ACEshark is a utility designed for rapid extraction and analysis of Windows service configurations and Access Control Entries, eliminating the need for tools like accesschk.exe or other
-non-native binaries.
+ACEshark is a utility designed for rapid extraction and analysis of Windows service configurations and Access Control Entries, eliminating the need for tools like accesschk.exe or other non-native binaries.
 
 options:
   -h, --help            show this help message and exit
@@ -62,27 +60,26 @@ BASIC OPTIONS:
   -k KEYFILE, --keyfile KEYFILE
                         Optional: Path to the private key for the TLS certificate.
   -f FILE_INPUT, --file-input FILE_INPUT
-                        ACEshark creates log files every time you run the extractor script on a machine (stored in ~/.ACEshark). Use this option to regenerate a services config analysis
-                        from a log file. This option cannot be used with -s.
+                        ACEshark creates log files every time you run the extractor script on a machine (stored in ~/.ACEshark). Use this option to regenerate a services config analysis from a log file. This
+                        option cannot be used with -s.
 
 MODES:
   -i, --interesting-only
-                        List only service ACEs potentially abusable by your user, based on their SID and group membership, with at least (WRITE_PROPERTY AND CONTROL_ACCESS) or GENERIC_ALL
+                        List only those service ACEs that can potentially be abused by your user, based on their SID and group membership, with at least (WRITE_PROPERTY AND CONTROL_ACCESS) or GENERIC_ALL
                         privileges.
   -g, --great-candidates
-                        Similar to --interesting-only but with stricter criteria. A service is labeled as a great candidate for privilege escalation if the service's START_TYPE ==
-                        DEMAND_START AND TYPE == WIN32_OWN_PROCESS AND your user has (WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges.
-  -a, --audit           Audit mode. Analyzes all service ACEs without searching for user-specific abusable services (Long output). This option also downgrades the extractor script,
-                        omitting the retrieval of the current user's SID and group membership information. By default, the WRITE_PROPERTY and CONTROL_ACCESS rights are highlighted for
-                        simplicity when they are present.
+                        Similar to --interesting-only but with stricter criteria. A service is labeled as a great candidate for privilege escalation if the service's START_TYPE == DEMAND_START AND TYPE ==
+                        WIN32_OWN_PROCESS AND your user has (WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges.
+  -a, --audit           Audit mode. Analyzes all service ACEs without searching for user-specific abusable services (Long output). This option also downgrades the extractor script, omitting the retrieval of
+                        the current user's SID and group membership information. By default, the WRITE_PROPERTY and CONTROL_ACCESS rights are highlighted for simplicity when they are present.
   -x CUSTOM_MODE, --custom-mode CUSTOM_MODE
-                        Provide a comma-separated list of integers representing generic access rights to match. List only service ACEs that your user may be able to abuse based on their
-                        SID and group membership. Use -lg to list all predefined generic access rights.
+                        Provide a comma-separated list of integers representing the generic access rights to match. Only service ACEs that your user may be able to abuse, based on their SID and group
+                        membership matching the provided rights, will be listed. Use -lg to list all predefined generic access rights.
   -lg, --list-generic   List all predefined generic access rights.
 
 EXTRACTOR MODIFICATIONS:
-  -gs, --get-service    This option modifies the extractor script to use Get-Service for listing available services. While cleaner, it may not work with a low-privileged account. The
-                        default Get-ChildItem approach, though less elegant, is more likely to succeed in most cases.
+  -gs, --get-service    This option modifies the extractor script to use Get-Service for listing available services. While cleaner, it may not work with a low-privileged account. The default Get-ChildItem
+                        approach, though less elegant, is more likely to succeed in most cases.
   -e, --encode          Generate Base64-encoded services configuration extractor script instead of raw PowerShell.
   -z CONFIG_FILENAME, --config-filename CONFIG_FILENAME
                         Change the temporary filename used to store the extracted services configuration before transferring the data via HTTP (default: sc.txt).
