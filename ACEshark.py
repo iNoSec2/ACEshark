@@ -23,7 +23,6 @@ PURPLE = '\033[0;38;5;141m'
 RED = '\033[1;31m'
 RST = '\033[0m'
 BOLD = '\033[1m'
-ULINE = '\033[4m'
 PL = f'{GREEN}+{RST}'
 INPUT = f'[{ORNG}Input{RST}]'
 INFO = f'[{MAIN}Info{RST}]'
@@ -56,10 +55,10 @@ basic_group.add_argument("-k", "--keyfile", action="store", help="Optional: Path
 basic_group.add_argument("-f", "--file-input", action="store", help = "ACEshark creates log files every time you run the extractor script on a machine (stored in ~/.ACEshark). Use this option to regenerate a services config analysis from a log file. This option cannot be used with -s.", type = str)
 
 modes_group = parser.add_argument_group('MODES')
-modes_group.add_argument("-i", "--interesting-only", action="store_true", help = "List only service ACEs potentially abusable by your user, based on their SID and group membership, with at least (WRITE_PROPERTY AND CONTROL_ACCESS) or GENERIC_ALL privileges.")
+modes_group.add_argument("-i", "--interesting-only", action="store_true", help = "List only those service ACEs that can potentially be abused by your user, based on their SID and group membership, with at least (WRITE_PROPERTY AND CONTROL_ACCESS) or GENERIC_ALL privileges.")
 modes_group.add_argument("-g", "--great-candidates", action="store_true", help = "Similar to --interesting-only but with stricter criteria. A service is labeled as a great candidate for privilege escalation if the service's START_TYPE == DEMAND_START AND TYPE == WIN32_OWN_PROCESS AND your user has (WRITE_PROPERTY AND CONTROL_ACCESS) OR GENERIC_ALL privileges.")
 modes_group.add_argument("-a", "--audit", action="store_true", help = "Audit mode. Analyzes all service ACEs without searching for user-specific abusable services (Long output). This option also downgrades the extractor script, omitting the retrieval of the current user's SID and group membership information. By default, the WRITE_PROPERTY and CONTROL_ACCESS rights are highlighted for simplicity when they are present. ")
-modes_group.add_argument("-x", "--custom-mode", action="store", help = "Provide a comma-separated list of integers representing generic access rights to match. List only service ACEs that your user may be able to abuse based on their SID and group membership. Use -lg to list all predefined generic access rights.", type = str)
+modes_group.add_argument("-x", "--custom-mode", action="store", help = "Provide a comma-separated list of integers representing the generic access rights to match. Only service ACEs that your user may be able to abuse, based on their SID and group membership matching the provided rights, will be listed. Use -lg to list all predefined generic access rights.", type = str)
 modes_group.add_argument("-lg", "--list-generic", action="store_true", help = "List all predefined generic access rights.")
 
 extractor_group = parser.add_argument_group('EXTRACTOR MODIFICATIONS')
@@ -140,8 +139,6 @@ if not args.list_generic:
 	POST_DATA_ENDPOINT = 'ACEshark'
 	SRVS_CONF_FILENAME = args.config_filename
 	DELIMITER = args.delimiter
-	# user_sid = ''
-	# user_groups = ''
 	server_address = args.server_address
 	port = args.port if args.port else (443 if tls else 80)
 	ACEshark_logs_dir = os.path.join(os.path.expanduser("~"), ".ACEshark")
@@ -333,9 +330,9 @@ def extract_object_name(sid, user_groups):
 
 
 
-def write_to_timestamped_file(content):
+def write_to_timestamped_file(content, client_addr):
 	timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-	file_name = f"{timestamp}.ACEshark.log"
+	file_name = f"{client_addr}_{timestamp}.ACEshark.log"
 	file_path = os.path.join(ACEshark_logs_dir, file_name)
 	
 	with open(file_path, 'w') as file:
@@ -390,7 +387,7 @@ def extractGroups(url_decoded_data_l):
 
 
 
-def audit_services_config(url_decoded_data_l):
+def audit_services_config(url_decoded_data_l, client_addr = False):
 	global FIN, target_generic_rights
 	print(f'{INFO} Initiating services audit.')
 
@@ -503,7 +500,7 @@ def audit_services_config(url_decoded_data_l):
 				url_decoded_data_l.insert(0, user_sid)
 			url_decoded_data_l.insert(0, 'audit' if args.audit else 'pe')
 			url_decoded_data_l.insert(0, '#!ACEshark_log')
-			write_to_timestamped_file('\n'.join(url_decoded_data_l))
+			write_to_timestamped_file('\n'.join(url_decoded_data_l), client_addr)
 		except Exception as e:
 			print(f'{ERR} Failed to write services configuration to a file: {e} - Moving on.')
 		FIN = True
@@ -533,6 +530,11 @@ class _HttpServer(BaseHTTPRequestHandler):
 		try:
 			self.server_version = "Microsoft-IIS/10"
 			self.sys_version = ""	
+
+			try:
+				client_addr = self.client_address[0]
+			except:
+				client_addr = 'null_client'
 				  
 			if self.path == f'/{POST_DATA_ENDPOINT}':
 				self.send_response(200)
@@ -547,7 +549,8 @@ class _HttpServer(BaseHTTPRequestHandler):
 				print(f'{INFO} Data retrieved! Processing...')
 				url_decoded_data_l = url_decoded_data.split('\n')
 				url_decoded_data_l.pop(0) # data=
-				audit_services_config(url_decoded_data_l)				
+				audit_services_config(url_decoded_data_l, client_addr)	
+				print(f'{IMP} Even if a service\'s ACEs suggest it\'s a great PE candidate, other Windows security features may still block its abuse.')			
 				print(f'{INFO} Done.')
 				exit()
 
@@ -602,7 +605,10 @@ def main():
 	print_banner() if not args.quiet else do_nothing()
 
 	if args.file_input:
-		extractor_args = [action.dest for action in extractor_group._group_actions]
+		extractor_args = [
+			action.dest for action in extractor_group._group_actions
+			if getattr(args, action.dest) != action.default
+		]
 		for val in extractor_args:
 			print(f'{INFO} Ignoring argument --{val}.')
 		for key, val in {'--port': args.port, '--certfile': args.certfile, '--keyfile': args.keyfile}.items():
@@ -614,7 +620,7 @@ def main():
 		data = log[1]
 
 		if (mode == 'pe' and log_mode == 'audit'):
-			exit(f'{DEBUG} This log was generated in Audit mode and cannot be used to regenerate service analysis in -i (--interesting-only), -x (--custom-mode), or -g (--great-candidates) modes. FYI, the opposite is possible.')
+			exit(f'{DEBUG} This log was generated in Audit mode and cannot be used for service analysis in -i (--interesting-only), -x (--custom-mode), or -g (--great-candidates) modes. FYI, the opposite is possible.')
 
 		elif mode == 'pe' and (mode == log_mode):
 			audit_services_config(data)
@@ -651,6 +657,7 @@ def main():
 	print(f'{INFO} Run the following extractor script (or similar) on the target machine to retrieve the configuration of all services:')
 	active_template = encodeExtractor(active_template) if args.encode else active_template
 	print(f'{GREEN}{active_template}{RST}') 
+
 	try:
 		copy2cb(active_template)
 		print(f'{ORNG}Copied to clipboard!{RST}')
