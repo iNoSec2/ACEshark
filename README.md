@@ -91,3 +91,6 @@ OUTPUT:
   -q, --quiet           Do not print the banner on startup.
   -v, --verbose         Print the user's SID and group membership info as well (not applicable in Audit mode).
 ```
+
+## Special Thanks
+@Pri3st, for helping test the tool!
