@@ -93,4 +93,4 @@ OUTPUT:
 ```
 
 ## Special Thanks
-@Pri3st, for helping test the tool!
+[Pri3st](https://www.github.com/Pri3st), for helping test the tool!
