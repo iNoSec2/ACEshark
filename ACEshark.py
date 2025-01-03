@@ -409,7 +409,8 @@ def audit_services_config(url_decoded_data_l, client_addr = False):
 		config = tmp[1].strip()
 		config_dict = extract_config(config)
 		if not config_dict['status']:
-			print(f'{BOLD}[{RED}{service}{RST}] Service config query failed. Error Code: {config_dict['reason'].strip(":")}')
+			reason = config_dict['reason'].strip(":")
+			print(f'{BOLD}[{RED}{service}{RST}] Service config query failed. Error Code: {reason}')
 			continue
 		user_account = config_dict['SERVICE_START_NAME']
 		service_type = config_dict['TYPE']
