@@ -41,7 +41,7 @@ pip3 install -r requirements.txt
 ```
 You’re all set.
 
-**Note**: If automatic copy to clipboard of the extractor script fails, you may need to install a copy/paste mechanism, like `sudo apt-get install xclip` or `sudo apt-get install xselect`:
+**Note**: If automatic copy to clipboard of the extractor script fails, you may need to install a copy/paste mechanism, like `sudo apt-get install xclip` or `sudo apt-get install xselect`.
 
 ## Usage
 ```
@@ -93,4 +93,4 @@ OUTPUT:
 ```
 
 ## Special Thanks
-[Pri3st](https://www.github.com/Pri3st), for helping test the tool!
+Marios K. Pappas (aka [Pri3st](https://www.github.com/Pri3st)), for helping test the tool!
