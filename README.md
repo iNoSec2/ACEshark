@@ -93,4 +93,5 @@ OUTPUT:
 ```
 
 ## Special Thanks
-Marios K. Pappas (aka [Pri3st](https://www.github.com/Pri3st)), for helping test the tool!
+- Marios K. Pappas (aka [Pri3st](https://www.github.com/Pri3st)), for helping test the tool!
+- [TJ_Null](https://x.com/TJ_Null), for testing and providing valuable feedback!
